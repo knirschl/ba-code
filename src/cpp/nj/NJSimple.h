@@ -136,7 +136,7 @@ vector_t<std::shared_ptr<Tree>> copyUnjoinedTrees(vector_t<std::shared_ptr<Tree>
 }
 
 template<typename T>
-int neighborJoining(matrix_t<T> const &distMatrix, std::shared_ptr<Tree> const &tree,
+int neighborJoining(matrix_t<T> const &distMatrix, std::shared_ptr<Tree> &tree,
                     std::vector<int> active_nodes) {
     const size_t n = distMatrix.size();
     /*static_assert([n, distMatrix]() {

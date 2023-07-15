@@ -18,9 +18,18 @@ private:
     std::vector<uint64_t> vec;
 
 public:
-    DynamicBitset() {}
+    DynamicBitset() = default;
 
-    DynamicBitset(int sz) : size(sz), vec((sz + 63) / 64) {}
+    explicit DynamicBitset(int sz) : size(sz), vec((sz + 63) / 64) {}
+
+    /**
+     * Copy constructor.
+     *
+     * @param copy_db
+     */
+    DynamicBitset(const DynamicBitset &copy_db) : size{copy_db.size}, vec(size) {
+        std::copy(copy_db.vec.begin(), copy_db.vec.end(), this->vec.begin());
+    }
 
     /**
      * Set the i-th bit.

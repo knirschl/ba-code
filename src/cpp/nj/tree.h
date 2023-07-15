@@ -33,15 +33,29 @@ private:
         /**
          * Indices in `tree`
          */
-        int idx{-1};
-        int left_child_idx{-1};
-        int right_child_idx{-1};
-        int parent_idx{-1};
-        int score{-1};
-        bool is_dup{};
-        bool is_leaf{}; // can be incorrect
-        DynamicBitset covered_groups{};
-        dist_t branch_length{-1};
+        int idx;
+        int left_child_idx;
+        int right_child_idx;
+        int parent_idx;
+        int score;
+        bool is_dup;
+        bool is_leaf; // can be incorrect
+        DynamicBitset covered_groups;
+        dist_t branch_length;
+
+        /**
+         * Modified default constructor.
+         */
+        Node() : idx{-1}, left_child_idx{-1}, right_child_idx{-1}, parent_idx{-1}, score{-1},
+                 is_dup{}, is_leaf{}, covered_groups{}, branch_length{-1} {
+        }
+
+        /**
+         * Copy constructor.
+         *
+         * @param copy_node
+         */
+        Node(const Node &copy_node) = default;
     };
 
     /**
@@ -112,7 +126,7 @@ public:
     /**
      * Constructs an empty tree.
      */
-    Tree() : tree{} {}
+    Tree() : tree{}, root{-1} {}
 
     /**
      * Constructs a tree from a set of leafs.
@@ -121,6 +135,18 @@ public:
      */
     Tree(const std::vector<std::string> &leafnames) {
         make_tree(leafnames);
+    }
+
+    /**
+     * Copy constructor.
+     *
+     * @param copy_tree
+     */
+    Tree(const Tree &copy_tree) : root{copy_tree.root} {
+        this->tree.reserve(copy_tree.tree.size());
+        for (const auto &copy_node: copy_tree.tree) {
+            this->tree.emplace_back(copy_node);
+        }
     }
 
     /**
@@ -182,8 +208,9 @@ public:
         Node &old_parent_node{tree[old_parent]};
         if (old_parent_node.parent_idx == -1) {
             int old_sibling{
-                    old_parent_node.left_child_idx == new_parent ? old_parent_node.right_child_idx
-                                                                 : old_parent_node.left_child_idx};
+                    old_parent_node.left_child_idx == new_parent
+                    ? old_parent_node.right_child_idx
+                    : old_parent_node.left_child_idx};
             tree[old_sibling].parent_idx = new_parent;
             tree[old_sibling].branch_length += new_parent_node.branch_length;
             if (overwrite_left) {
@@ -253,7 +280,8 @@ public:
         if (tree[cur].is_leaf) {
             return tree[cur].score = 0;
         }
-        tree[cur].score = tag_APro(tree[cur].left_child_idx) + tag_APro(tree[cur].right_child_idx);
+        tree[cur].score =
+                tag_APro(tree[cur].left_child_idx) + tag_APro(tree[cur].right_child_idx);
         DynamicBitset &covered_left = tree[tree[cur].left_child_idx].covered_groups;
         DynamicBitset &covered_right = tree[tree[cur].right_child_idx].covered_groups;
         tree[cur].covered_groups = covered_left | covered_right;
