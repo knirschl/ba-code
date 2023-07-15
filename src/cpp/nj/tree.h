@@ -23,6 +23,8 @@ private:
     struct Node;
 public:
     std::vector<Node> tree;
+    std::vector<int> leaf_indices{}; // leaf array indices
+    std::vector<std::string> idx2leafname{}; // map node array index to locus name ("12_0_1")
     int root;
 
 private:
@@ -132,7 +134,7 @@ public:
     void make_leafs(const std::vector<std::string> &leafnames) {
         // reset structs
         idx2leafname.clear();
-        leaf_indices.clear();
+        this->leaf_indices.clear();
         idx2leafname.resize(leafnames.size());
         tree = std::vector<Node>{leafnames.size()};
         root = -1;
@@ -145,9 +147,9 @@ public:
             //    idx2leafname.resize(leaf_idx + 1);
             //}
             idx2leafname[leaf_idx] = leafnames.at(leaf_idx);
-            leaf_indices.emplace_back(leaf_idx);
+            this->leaf_indices.emplace_back(leaf_idx);
             // give associated groupname an id or use existing one to set bitset
-            std::string groupname = leafname2groupname.at(leafnames.at(leaf_idx));
+            std::string groupname = leafname2groupname[leafnames[leaf_idx]];
             if (!(groupname2id.contains(groupname))) {
                 groupname2id.emplace(groupname, groupname2id.size());
             }
@@ -387,10 +389,10 @@ public:
     */
     std::vector<std::pair<int, int>> get_speciation_pairs() {
         std::vector<std::pair<int, int>> pairs{};
-        for (int i{}; i < leaf_indices.size(); i++) {
-            int leaf1_id{tree[leaf_indices[i]].idx};
-            for (int j{i + 1}; j < leaf_indices.size(); j++) {
-                int leaf2_id{tree[leaf_indices[j]].idx};
+        for (int i{}; i < this->leaf_indices.size(); i++) {
+            int leaf1_id{tree[this->leaf_indices[i]].idx};
+            for (int j{i + 1}; j < this->leaf_indices.size(); j++) {
+                int leaf2_id{tree[this->leaf_indices[j]].idx};
                 if (!tree[lca(leaf1_id, leaf2_id)].is_dup) {
                     pairs.emplace_back(leaf1_id, leaf2_id);
                 }
@@ -398,6 +400,14 @@ public:
         }
 
         return pairs;
+    }
+
+    std::string get_name_or_idx(int node) const {
+        if (node < 0 || node >= idx2leafname.size()) {
+            return std::to_string(node);
+        }
+        return idx2leafname[node];
+
     }
 
     std::string to_string(int cur) const {

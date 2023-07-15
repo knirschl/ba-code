@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <iomanip>
+#include <thread>
 #include "io/parse_cli.h"
 #include "io/parse_file.h"
 #include "io/write_tree.h"
@@ -12,44 +13,14 @@
 #include "nj/NJSimple.h"
 #include "misc/meta.h"
 
-/**
- * Resets tree and mappings that need to be reset.
- *
- * ==========
- * INFO: Only needed for figuring out what settings are best
- * ==========
- *
- * @param map_config
- * @return
- */
-auto reset(const std::vector<std::string> &species_tree_ids,
-           const std::vector<std::string> &alignment_ids,
-           const std::tuple<std::string, bool, std::string> &map_config,
-           const std::shared_ptr<Tree> &old_tree = nullptr) {
-    // fill map
-    if (get<0>(map_config).empty()) {
-        // no mapping provided
-        for (int i{}; i < alignment_ids.size(); i++) {
-            leafname2groupname.emplace(alignment_ids[i], species_tree_ids[i]);
-        }
-    } else {
-        leafname2groupname = parse_mapping_from_cfg(map_config);
-    }
-    // create tree
-    std::shared_ptr<Tree> tree = std::make_shared<Tree>();
-    tree->make_leafs(alignment_ids);
-    tree = old_tree != nullptr ? old_tree : tree;
-    return tree;
-}
-
 void run(double scale, const std::shared_ptr<Tree> &tree, std::vector<int> &active,
          const std::vector<std::vector<double>> &species_tree_mat,
          const std::vector<std::vector<double>> &alignment_mat,
-         argparse::ArgumentParser &cli_parser) {
+         const std::string &out_prefix) {
     dist_matrix_t corrected_matrix{alignment_mat};
     for (auto &pair: tree->get_speciation_pairs()) {
-        std::string locus1 = idx2leafname[pair.first];
-        std::string locus2 = idx2leafname[pair.second];
+        std::string locus1 = tree->idx2leafname[pair.first];
+        std::string locus2 = tree->idx2leafname[pair.second];
         int ai = leafname2matidx[locus1];
         int aj = leafname2matidx[locus2];
         int si = groupname2matidx[leafname2groupname[locus1]];
@@ -66,7 +37,24 @@ void run(double scale, const std::shared_ptr<Tree> &tree, std::vector<int> &acti
     // double to string without trailing zeros
     std::ostringstream oss;
     oss << std::setprecision(8) << std::noshowpoint << scale;
-    write_newick(*tree, getP(cli_parser) + oss.str() + "S~G.geneTree.newick");
+    write_newick(*tree, out_prefix + oss.str() + "S~G.geneTree.newick");
+}
+
+void run_thread(const double scale, const dist_matrix_t &species_tree_mat,
+                const std::vector<std::string> &alignment_ids,
+                const dist_matrix_t &glob_alignment_mat,
+                const std::string &out_prefix) {
+    dist_matrix_t alignment_mat{glob_alignment_mat};
+    std::shared_ptr<Tree> tree = std::make_shared<Tree>();
+    tree->make_leafs(alignment_ids);
+    std::vector<int> active{tree->leaf_indices};
+
+    // NJ gene tree with only alignment matrix -> old: 0S+G
+    neighborJoining<>(alignment_mat, tree, active);
+    tree->reroot_APro();
+
+    active = tree->leaf_indices;
+    run(scale, tree, active, species_tree_mat, alignment_mat, out_prefix);
 }
 
 int main(int argc, char *argv[]) {
@@ -91,32 +79,30 @@ int main(int argc, char *argv[]) {
              [&a_cnt](auto &s) { leafname2matidx.emplace(s, a_cnt++); });
 
     auto map_config{getMappingConfig(cli_parser)};
+    // fill map
+    if (get<0>(map_config).empty()) {
+        // no mapping provided
+        for (int i{}; i < alignment_ids.size(); i++) {
+            leafname2groupname.emplace(alignment_ids[i], species_tree_ids[i]);
+        }
+    } else {
+        leafname2groupname = parse_mapping_from_cfg(map_config);
+    }
 
     // calculate
     {
-        std::shared_ptr<Tree> tree = reset(species_tree_ids, alignment_ids, map_config);
-        std::vector<int> active{leaf_indices};
-
-        // NJ gene tree with only alignment matrix -> old: 0S+G
-        neighborJoining<>(alignment_mat, tree, active);
-        tree->reroot_APro();
-        std::shared_ptr<Tree> backup_tree{tree}; // need to reset tree after each iteration
-
-        // NJ gene tree with corrected values
+        std::vector<std::thread> threads{};
+        // run everything
         double div{100.0};
         int step{10};
         for (int i{int(1 * div) + step}; i <= 2 * div; i += step) {
-            tree = reset(species_tree_ids, alignment_ids, map_config, backup_tree);
-            active = leaf_indices;
-
-            run(i / div, tree, active, species_tree_mat, alignment_mat, cli_parser);
+            threads.emplace_back(run_thread, i / div, species_tree_mat,
+                                 alignment_ids, alignment_mat, getP(cli_parser));
         }
         double scales[] = {2.25, 2.5, 3, 5, 10};
-        for (double scale : scales) {
-            tree = reset(species_tree_ids, alignment_ids, map_config);
-            active = leaf_indices;
-
-            run(scale, tree, active, species_tree_mat, alignment_mat, cli_parser);
+        for (double scale: scales) {
+            threads.emplace_back(run_thread, scale, species_tree_mat,
+                                 alignment_ids, alignment_mat, getP(cli_parser));
         }
         /*
         for (int i{int(2.5 * div)}; i <= 10 * div; i *= 2) {
@@ -126,6 +112,10 @@ int main(int argc, char *argv[]) {
             run(i / div, tree, active, species_tree_mat, alignment_mat, cli_parser);
         }
          */
+
+        for (auto &thread: threads) {
+            thread.join();
+        }
     }
 
     return 0;
